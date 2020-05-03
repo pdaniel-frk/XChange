@@ -33,6 +33,15 @@ public enum KlineInterval {
     this.code = code;
   }
 
+  public static KlineInterval getByCode(String code) {
+    for (KlineInterval c : values()) {
+      if (c.code.equals(code)) {
+        return c;
+      }
+    }
+    throw new IllegalArgumentException(String.valueOf(code));
+  }
+
   public Long getMillis() {
     return millis;
   }

@@ -1,18 +1,18 @@
 package org.knowm.xchange.binance.service;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.knowm.xchange.Exchange;
 import org.knowm.xchange.binance.BinanceAdapters;
 import org.knowm.xchange.binance.BinanceErrorAdapter;
 import org.knowm.xchange.binance.dto.BinanceException;
-import org.knowm.xchange.binance.dto.marketdata.BinanceAggTrades;
-import org.knowm.xchange.binance.dto.marketdata.BinanceOrderbook;
-import org.knowm.xchange.binance.dto.marketdata.BinancePriceQuantity;
-import org.knowm.xchange.binance.dto.marketdata.BinanceTicker24h;
+import org.knowm.xchange.binance.dto.marketdata.*;
 import org.knowm.xchange.currency.CurrencyPair;
+import org.knowm.xchange.dto.Ohlc;
 import org.knowm.xchange.dto.Order.OrderType;
 import org.knowm.xchange.dto.marketdata.OrderBook;
 import org.knowm.xchange.dto.marketdata.Ticker;
@@ -140,8 +140,67 @@ public class BinanceMarketDataService extends BinanceMarketDataServiceRaw
     }
   }
 
+  private String argumentString(Object[] args, int index, Function converter) {
+    if (index >= args.length) {
+      return null;
+    }
+    Object arg = args[index];
+    if (arg == null) {
+      return null;
+    }
+    String argStr = arg.toString();
+    try {
+      return argStr;
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException(
+          "Argument on index " + index + " is not a number: " + argStr, e);
+    }
+  }
+
   public List<Ticker> getAllBookTickers() throws IOException {
     List<BinancePriceQuantity> binanceTickers = tickerAllBookTickers();
     return BinanceAdapters.adaptPriceQuantities(binanceTickers);
+  }
+
+  /**
+   * @param currencyPair - the currency pair
+   * @param args 0 - interval for candles (1m, 1h...), 1 - limit (default 1000), 2 - startTime
+   *     (long), 3 - endTime (long)
+   * @return
+   * @throws IOException
+   */
+  @Override
+  public List<Ohlc> getOhlc(CurrencyPair currencyPair, Object... args) throws IOException {
+    String intervalString = argumentString(args, 0, String::valueOf);
+    Integer limit = tradesArgument(args, 1, Integer::valueOf);
+    if (limit == null || limit == 0) {
+      limit = 1000;
+    }
+    Long startTime = tradesArgument(args, 2, Long::valueOf);
+    Long endTime = tradesArgument(args, 3, Long::valueOf);
+    List<BinanceKline> binanceKlineList =
+        super.klines(
+            currencyPair, KlineInterval.getByCode(intervalString), limit, startTime, endTime);
+    return binanceKlineList.stream()
+        .map(
+            k -> {
+              Ohlc ohlc =
+                  new Ohlc(
+                      k.getOpenPrice(),
+                      k.getHighPrice(),
+                      k.getLowPrice(),
+                      k.getClosePrice(),
+                      k.getVolume(),
+                      k.getOpenTime());
+              Map<String, Object> extra = new HashMap<>();
+              extra.put("closeTime", k.getCloseTime());
+              extra.put("quoteAssetVolume", k.getQuoteAssetVolume());
+              extra.put("numberOfTrades", k.getNumberOfTrades());
+              extra.put("takerBuyBaseAssetVolume", k.getTakerBuyBaseAssetVolume());
+              extra.put("takerBuyQuoteAssetVolume", k.getTakerBuyQuoteAssetVolume());
+              ohlc.setExtra(extra);
+              return ohlc;
+            })
+        .collect(Collectors.toList());
   }
 }
